@@ -730,85 +730,92 @@ export default function App() {
   const bn=id=>id?(bags.find(b=>b.id===id)?.name??"?"):null;
   const visibleFreezers=filterFreezer==="all"?freezers:freezers.filter(f=>f.id===filterFreezer);
 
-  // ── CRUD — update local state immediately, sync to Supabase in background ──
+  // ── CRUD — await Supabase, then reload from DB ──
+  async function reload(){
+    const [a,b,c,d,e,f]=await Promise.all([
+      supabase.from("freezers").select("*").order("created_at"),
+      supabase.from("bags").select("*").order("created_at"),
+      supabase.from("items").select("*").order("created_at"),
+      supabase.from("consumption_log").select("*").order("logged_at",{ascending:false}).limit(100),
+      supabase.from("shops").select("*").order("created_at"),
+      supabase.from("shopping_list").select("*").order("created_at"),
+    ]);
+    if(a.data)setFreezers(a.data);
+    if(b.data)setBags(b.data);
+    if(c.data)setItems(c.data);
+    if(d.data)setLog(d.data);
+    if(e.data)setShops(e.data);
+    if(f.data)setListItems(f.data);
+  }
+
   async function saveItem(form){
     const record={...form,id:form.id??uid()};
-    setItems(prev=>prev.some(i=>i.id===record.id)?prev.map(i=>i.id===record.id?record:i):[...prev,record]);
     setShowAddItem(false);setEditItem(null);
-    supabase.from("items").upsert(record);
+    await supabase.from("items").upsert(record);
+    reload();
   }
   async function deleteItem(id){
-    setItems(prev=>prev.filter(i=>i.id!==id));
     setConfirmDel(null);setEditItem(null);
-    supabase.from("items").delete().eq("id",id);
+    await supabase.from("items").delete().eq("id",id);
+    reload();
   }
   async function saveBag(form){
     const record={...form,id:form.id??uid()};
-    setBags(prev=>prev.some(b=>b.id===record.id)?prev.map(b=>b.id===record.id?record:b):[...prev,record]);
     setEditBag(null);
-    supabase.from("bags").upsert(record);
+    await supabase.from("bags").upsert(record);
+    reload();
   }
   async function deleteBag(id){
-    setBags(prev=>prev.filter(b=>b.id!==id));
-    setItems(prev=>prev.map(i=>i.bag_id===id?{...i,bag_id:null}:i));
     setConfirmDel(null);
-    supabase.from("bags").delete().eq("id",id);
+    await supabase.from("bags").delete().eq("id",id);
+    reload();
   }
   async function saveFreezer(form){
     const record={...form,id:form.id??uid()};
-    setFreezers(prev=>prev.some(f=>f.id===record.id)?prev.map(f=>f.id===record.id?record:f):[...prev,record]);
     setEditFreezer(null);
-    supabase.from("freezers").upsert(record);
+    const {data,error}=await supabase.from("freezers").upsert(record).select();
+    console.log("saveFreezer result:", JSON.stringify({data,error}));
+    if(error){alert("Fout bij opslaan: "+error.message);return;}
+    reload();
   }
   async function deleteFreezer(id){
-    setFreezers(prev=>prev.filter(f=>f.id!==id));
-    setBags(prev=>prev.filter(b=>b.freezer_id!==id));
-    setItems(prev=>prev.filter(i=>i.freezer_id!==id));
     setConfirmDel(null);
-    supabase.from("freezers").delete().eq("id",id);
+    await supabase.from("freezers").delete().eq("id",id);
+    reload();
   }
   async function saveShop(form){
     const record={...form,id:form.id??uid()};
-    setShops(prev=>prev.some(s=>s.id===record.id)?prev.map(s=>s.id===record.id?record:s):[...prev,record]);
     setEditShop(null);
-    supabase.from("shops").upsert(record);
+    await supabase.from("shops").upsert(record);
+    reload();
   }
   async function deleteShop(id){
-    setShops(prev=>prev.filter(s=>s.id!==id));
-    supabase.from("shops").delete().eq("id",id);
+    await supabase.from("shops").delete().eq("id",id);
+    reload();
   }
-
   async function consume(item){
     if(item.pieces<=0)return;
-    const updated={...item,pieces:item.pieces-1};
-    setItems(prev=>prev.map(i=>i.id===item.id?updated:i));
     const entry={id:uid(),item_name:item.name,freezer_id:item.freezer_id,bag_id:item.bag_id,amount:1,logged_at:new Date().toISOString()};
-    setLog(prev=>[entry,...prev].slice(0,100));
-    supabase.from("items").update({pieces:item.pieces-1}).eq("id",item.id);
-    supabase.from("consumption_log").insert(entry);
+    await supabase.from("items").update({pieces:item.pieces-1}).eq("id",item.id);
+    await supabase.from("consumption_log").insert(entry);
+    reload();
   }
-
   async function addToList(item,shopId){
-    const entry={id:uid(),shop_id:shopId,name:item.name,qty:item.qty||"",unit:item.unit||"",done:false,created_at:new Date().toISOString()};
-    setListItems(prev=>[...prev,entry]);
-    supabase.from("shopping_list").insert(entry);
+    await supabase.from("shopping_list").insert({id:uid(),shop_id:shopId,name:item.name,qty:item.qty||"",unit:item.unit||"",done:false,created_at:new Date().toISOString()});
+    reload();
   }
-
   async function addToListDirect(shopId,name,qty,unit){
-    const entry={id:uid(),shop_id:shopId,name,qty:qty||"",unit:unit||"",done:false,created_at:new Date().toISOString()};
-    setListItems(prev=>[...prev,entry]);
-    supabase.from("shopping_list").insert(entry);
+    await supabase.from("shopping_list").insert({id:uid(),shop_id:shopId,name,qty:qty||"",unit:unit||"",done:false,created_at:new Date().toISOString()});
+    reload();
   }
-
   async function toggleListItem(li){
-    setListItems(prev=>prev.map(i=>i.id===li.id?{...i,done:!li.done}:i));
-    supabase.from("shopping_list").update({done:!li.done}).eq("id",li.id);
+    await supabase.from("shopping_list").update({done:!li.done}).eq("id",li.id);
+    reload();
   }
   async function removeListItem(id){
-    setListItems(prev=>prev.filter(i=>i.id!==id));
-    supabase.from("shopping_list").delete().eq("id",id);
+    await supabase.from("shopping_list").delete().eq("id",id);
+    reload();
   }
-
   async function handleImport(rows){
     const records=rows.map(r=>({
       id:r.id||uid(), name:r.naam||r.name||"", category:r.categorie||r.category||CATEGORIES[0],
@@ -820,12 +827,8 @@ export default function App() {
       min_pieces:r.min_stuks!==""&&r.min_stuks!=null?Number(r.min_stuks):null,
       barcode:r.barcode||""
     }));
-    setItems(prev=>{
-      const map=new Map(prev.map(i=>[i.id,i]));
-      records.forEach(r=>map.set(r.id,r));
-      return [...map.values()];
-    });
-    supabase.from("items").upsert(records);
+    await supabase.from("items").upsert(records);
+    reload();
   }
 
   // Grouped view
