@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { supabase } from "./supabase";
-import * as XLSX from "xlsx";
 
 // ── Constants ─────────────────────────────────────────────────────
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
@@ -575,38 +574,51 @@ function ShoppingTab({shops,listItems,onToggle,onRemove,onAddItem,onAddShop,onEd
 // ── Settings tab ──────────────────────────────────────────────────
 function SettingsTab({freezers,bags,shops,items,listItems,onEditFreezer,onDeleteFreezer,onAddFreezer,onEditBag,onDeleteBag,onEditShop,onDeleteShop,onAddShop,onImport}) {
 
-  function exportXLSX() {
-    const wb=XLSX.utils.book_new();
-    const ws=XLSX.utils.json_to_sheet(items.map(i=>({
+  function doExport(XL) {
+    const wb=XL.utils.book_new();
+    const ws=XL.utils.json_to_sheet(items.map(i=>({
       id:i.id, naam:i.name, categorie:i.category||"", locatie_id:i.freezer_id,
       zak_id:i.bag_id||"", stuks:i.pieces, hoeveelheid:i.qty||"", eenheid:i.unit,
       datum_opgeslagen:i.date_added, houdbaar_dagen:i.shelf_days,
       min_stuks:i.min_pieces??"", barcode:i.barcode||""
     })));
-    XLSX.utils.book_append_sheet(wb,ws,"Producten");
-    const wsFz=XLSX.utils.json_to_sheet(freezers.map(f=>({id:f.id,naam:f.name})));
-    XLSX.utils.book_append_sheet(wb,wsFz,"Locaties");
-    const wsBg=XLSX.utils.json_to_sheet(bags.map(b=>({id:b.id,naam:b.name,locatie_id:b.freezer_id})));
-    XLSX.utils.book_append_sheet(wb,wsBg,"Zakken");
-    // Safari-compatible download via blob
-    const wbout=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+    XL.utils.book_append_sheet(wb,ws,"Producten");
+    const wsFz=XL.utils.json_to_sheet(freezers.map(f=>({id:f.id,naam:f.name})));
+    XL.utils.book_append_sheet(wb,wsFz,"Locaties");
+    const wsBg=XL.utils.json_to_sheet(bags.map(b=>({id:b.id,naam:b.name,locatie_id:b.freezer_id})));
+    XL.utils.book_append_sheet(wb,wsBg,"Zakken");
+    const wbout=XL.write(wb,{bookType:"xlsx",type:"array"});
     const blob=new Blob([wbout],{type:"application/octet-stream"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
-    a.href=url;
-    a.download="FoodStore_backup.xlsx";
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
+    a.href=url; a.download="FoodStore_backup.xlsx";
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},200);
+  }
+
+  function exportXLSX() {
+    if(window.XLSX){doExport(window.XLSX);return;}
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload=()=>doExport(window.XLSX);
+    s.onerror=()=>alert("Kon Excel library niet laden. Probeer opnieuw.");
+    document.head.appendChild(s);
   }
 
   function handleImport(e) {
     const file=e.target.files[0]; if(!file)return;
     const reader=new FileReader();
     reader.onload=evt=>{
-      const wb=XLSX.read(evt.target.result,{type:"binary"});
-      const rows=XLSX.utils.sheet_to_json(wb.Sheets["Producten"]||wb.Sheets[wb.SheetNames[0]]);
-      onImport(rows);
+      function doRead(XL){
+        const wb=XL.read(evt.target.result,{type:"binary"});
+        const rows=XL.utils.sheet_to_json(wb.Sheets["Producten"]||wb.Sheets[wb.SheetNames[0]]);
+        onImport(rows);
+      }
+      if(window.XLSX){doRead(window.XLSX);return;}
+      const s=document.createElement("script");
+      s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      s.onload=()=>doRead(window.XLSX);
+      document.head.appendChild(s);
     };
     reader.readAsBinaryString(file);
     e.target.value="";
