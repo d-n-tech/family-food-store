@@ -588,7 +588,16 @@ function SettingsTab({freezers,bags,shops,items,listItems,onEditFreezer,onDelete
     XLSX.utils.book_append_sheet(wb,wsFz,"Locaties");
     const wsBg=XLSX.utils.json_to_sheet(bags.map(b=>({id:b.id,naam:b.name,locatie_id:b.freezer_id})));
     XLSX.utils.book_append_sheet(wb,wsBg,"Zakken");
-    XLSX.utils.writeFile(wb,"FoodStore_backup.xlsx");
+    // Safari-compatible download via blob
+    const wbout=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+    const blob=new Blob([wbout],{type:"application/octet-stream"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download="FoodStore_backup.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
   }
 
   function handleImport(e) {
