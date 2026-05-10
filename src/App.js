@@ -696,8 +696,8 @@ export default function App() {
   const [confirmDel,setConfirmDel]=useState(null);
 
   useEffect(()=>{
-    async function load(){
-      setLoading(true);
+    async function load(showLoading=false){
+      if(showLoading) setLoading(true);
       const [a,b,c,d,e,f]=await Promise.all([
         supabase.from("freezers").select("*").order("created_at"),
         supabase.from("bags").select("*").order("created_at"),
@@ -712,13 +712,16 @@ export default function App() {
       if(d.data)setLog(d.data);
       if(e.data)setShops(e.data);
       if(f.data)setListItems(f.data);
-      setLoading(false);
+      if(showLoading) setLoading(false);
     }
-    load();
+    load(true);
+    // Realtime via Supabase channels
     const chs=["freezers","bags","items","consumption_log","shops","shopping_list"].map(t=>
       supabase.channel(t).on("postgres_changes",{event:"*",schema:"public",table:t},()=>load()).subscribe()
     );
-    return()=>chs.forEach(c=>supabase.removeChannel(c));
+    // Polling fallback every 10 seconds for cross-device sync
+    const poll=setInterval(()=>load(),10000);
+    return()=>{chs.forEach(c=>supabase.removeChannel(c));clearInterval(poll);};
   },[]);
 
   const alerts=useMemo(()=>items.filter(i=>daysLeft(i.date_added,i.shelf_days)<=14&&i.pieces>0),[items]);
